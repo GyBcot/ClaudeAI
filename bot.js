@@ -3,6 +3,7 @@
 const axios = require('axios');
 const mime = require('mime-types');
 const FormData = require('form-data');
+const { marked } = require('marked');
 const { randomUUID } = require('crypto');
 const TelegramBot = require('node-telegram-bot-api');
 
@@ -160,30 +161,31 @@ async function sendCompletion(session, convId, prompt, parentUuid = null, fileUu
   });
 }
 
-function escapeMarkdown(text) {
-  return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
-}
+const renderer = new marked.Renderer();
+
+renderer.heading = ({ text }) => `<b>${text}</b>\n`;
+renderer.strong = ({ text }) => `<b>${text}</b>`;
+renderer.em = ({ text }) => `<i>${text}</i>`;
+renderer.codespan = ({ text }) => `<code>${text}</code>`;
+renderer.code = ({ text }) => `<pre><code>${text}</code></pre>\n`;
+renderer.paragraph = ({ text }) => `${text}\n\n`;
+renderer.link = ({ href, text }) => `<a href="${href}">${text}</a>`;
+renderer.list = (token) => {
+  const items = token.items.map(item => `• ${item.text}`).join('\n');
+  return `${items}\n`;
+};
+
+renderer.listitem = ({ text }) => text;
+renderer.blockquote = ({ text }) => `<i>${text}</i>\n`;
+
+marked.setOptions({ renderer });
 
 function formatResponse(text) {
-  return text
-    .replace(/^### (.+)$/gm, '*$1*')
-    .replace(/^## (.+)$/gm, '*$1*')
-    .replace(/^# (.+)$/gm, '*$1*')
-    .replace(/\*\*(.+?)\*\*/g, '*$1*')
-    .replace(/`{3}(\w*)\n([\s\S]*?)`{3}/g, (_, lang, code) => `\`\`\`\n${code.trim()}\n\`\`\``)
-    .replace(/^[-*] (.+)$/gm, '• $1')
-    .replace(/^\d+\. (.+)$/gm, (m) => m);
+  return marked.parse(text).trim();
 }
 
 async function sendLongMessage(bot, chatId, text, replyToId = null) {
   const MAX_LENGTH = 4096;
-  const opts = { parse_mode: 'Markdown' };
-  if (replyToId) opts.reply_to_message_id = replyToId;
-
-  if (text.length <= MAX_LENGTH) {
-    await bot.sendMessage(chatId, text, opts);
-    return;
-  }
 
   const chunks = [];
   let remaining = text;
@@ -193,9 +195,9 @@ async function sendLongMessage(bot, chatId, text, replyToId = null) {
   }
 
   for (let i = 0; i < chunks.length; i++) {
-    const chunkOpts = { parse_mode: 'Markdown' };
-    if (i === 0 && replyToId) chunkOpts.reply_to_message_id = replyToId;
-    await bot.sendMessage(chatId, chunks[i], chunkOpts);
+    const opts = { parse_mode: 'HTML' };
+    if (i === 0 && replyToId) opts.reply_to_message_id = replyToId;
+    await bot.sendMessage(chatId, chunks[i], opts);
   }
 }
 
@@ -230,8 +232,8 @@ bot.onText(/\/start/, (msg) => {
   if (!session) return;
   bot.sendMessage(
     msg.chat.id,
-    `Halo *${escapeMarkdown(msg.from.first_name)}*\\! 👋\n\nBot Claude AI siap digunakan\\.\nModel aktif: *${escapeMarkdown(session.modelLabel)}*\n\nKirim pesan atau file untuk mulai chat\\. Gunakan /model untuk ganti model\\.`,
-    { parse_mode: 'MarkdownV2' }
+    `Halo <b>${msg.from.first_name}</b>! 👋\n\nBot Claude AI siap digunakan.\nModel aktif: <b>${session.modelLabel}</b>\n\nKirim pesan atau file untuk mulai chat. Gunakan /model untuk ganti model.`,
+    { parse_mode: 'HTML' }
   );
 });
 
@@ -241,7 +243,7 @@ bot.onText(/\/reset/, (msg) => {
     userSessions[userId].convId = randomUUID();
     userSessions[userId].parentUuid = null;
   }
-  bot.sendMessage(msg.chat.id, '🔄 Percakapan direset\\. Mulai chat baru\\!', { parse_mode: 'MarkdownV2' });
+  bot.sendMessage(msg.chat.id, '🔄 Percakapan direset. Mulai chat baru!', { parse_mode: 'HTML' });
 });
 
 bot.onText(/\/model/, (msg) => {
@@ -274,11 +276,11 @@ bot.on('callback_query', async (query) => {
 
     await bot.answerCallbackQuery(query.id, { text: `Model diganti ke ${chosen.label}` });
     await bot.editMessageText(
-      `✅ Model aktif: *${escapeMarkdown(chosen.label)}*\n🔄 Percakapan direset otomatis\\.`,
+      `✅ Model aktif: <b>${chosen.label}</b>\n🔄 Percakapan direset otomatis.`,
       {
         chat_id: query.message.chat.id,
         message_id: query.message.message_id,
-        parse_mode: 'MarkdownV2',
+        parse_mode: 'HTML',
       }
     );
   }
@@ -294,10 +296,12 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
   const prompt = msg.text || msg.caption || '';
   if (!prompt && !fileBuffer) return;
 
+  let typingInterval;
+
   try {
     await bot.sendChatAction(chatId, 'typing');
 
-    const typingInterval = setInterval(() => {
+    typingInterval = setInterval(() => {
       bot.sendChatAction(chatId, 'typing').catch(() => {});
     }, 4000);
 
@@ -319,6 +323,7 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
     const formatted = formatResponse(result.text);
     await sendLongMessage(bot, chatId, formatted, msg.message_id);
   } catch (err) {
+    clearInterval(typingInterval);
     console.error('Error:', err.message);
     await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
   }
