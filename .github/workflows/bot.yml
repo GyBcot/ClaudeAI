@@ -1,1 +1,56 @@
-u
+name: ClaudeAI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Restore node_modules
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node_modules-${{ hashFiles('package.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: npm install --omit=dev --silent
+
+      - name: Save node_modules
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node_modules-${{ hashFiles('package.json') }}
+
+      - name: Run Bot
+        timeout-minutes: 358
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CLAUDE_SESSION: ${{ secrets.CLAUDE_SESSION }}
+        run: node bot.js
+
+      - name: Self Restart
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches \
+            --data '{"ref":"main"}'
+            
