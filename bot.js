@@ -3,9 +3,9 @@
 const axios = require('axios');
 const mime = require('mime-types');
 const FormData = require('form-data');
-const { marked } = require('marked');
 const { randomUUID } = require('crypto');
 const TelegramBot = require('node-telegram-bot-api');
+const { marked } = require('marked');
 
 const BASE_URL = 'https://claude.ai';
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -161,6 +161,13 @@ async function sendCompletion(session, convId, prompt, parentUuid = null, fileUu
   });
 }
 
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 const renderer = new marked.Renderer();
 
 renderer.space = () => '\n';
@@ -169,8 +176,8 @@ renderer.paragraph = ({ text }) => `${text}\n\n`;
 renderer.strong = ({ text }) => `<b>${text}</b>`;
 renderer.em = ({ text }) => `<i>${text}</i>`;
 renderer.del = ({ text }) => `<s>${text}</s>`;
-renderer.codespan = ({ text }) => `<code>${text}</code>`;
-renderer.code = ({ text }) => `<pre><code>${text}</code></pre>\n`;
+renderer.codespan = ({ text }) => `<code>${escapeHtml(text)}</code>`;
+renderer.code = ({ text }) => `<pre><code>${escapeHtml(text)}</code></pre>\n`;
 renderer.link = ({ href, text }) => `<a href="${href}">${text}</a>`;
 renderer.image = ({ text }) => text;
 renderer.blockquote = ({ text }) => `<i>${text}</i>\n`;
@@ -180,7 +187,7 @@ renderer.checkbox = () => '';
 renderer.table = (token) => {
   const header = token.header.map(h => h.text).join(' | ');
   const rows = token.rows.map(row => row.map(cell => cell.text).join(' | ')).join('\n');
-  return `<pre><code>${header}\n${rows}</code></pre>\n`;
+  return `<pre><code>${escapeHtml(header + '\n' + rows)}</code></pre>\n`;
 };
 renderer.tablerow = ({ text }) => text;
 renderer.tablecell = ({ text }) => text;
