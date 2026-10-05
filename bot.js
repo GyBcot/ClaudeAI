@@ -219,8 +219,6 @@ function getUserSession(userId) {
   return userSessions[userId];
 }
 
-console.log('ClaudeAI started...');
-
 bot.setMyCommands([
   { command: 'start', description: 'Mulai bot' },
   { command: 'model', description: 'Pilih model Claude' },
@@ -306,7 +304,6 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
     let fileUuids = [];
 
     if (fileBuffer) {
-      await bot.sendChatAction(chatId, 'upload_document');
       const uploaded = await uploadFile(session, session.convId, fileBuffer, fileName, mimeType);
       fileUuids.push(uploaded.uuid);
     }
@@ -360,6 +357,8 @@ bot.on('message', async (msg) => {
     await bot.sendMessage(msg.chat.id, `❌ Gagal mengunduh file: ${err.message}`);
   }
 });
+
+console.log('ClaudeAI started...');
 
 bot.on('polling_error', (err) => {
   console.error('Polling error:', err.message);
