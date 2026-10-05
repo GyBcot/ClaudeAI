@@ -1,0 +1,16 @@
+{
+  "name": "ClaudeAI",
+  "main": "bot.js",
+  
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "author": "RSCoders",
+  
+  "dependencies": {
+    "axios": "1.6.0",
+    "form-data": "4.0.0",
+    "mime-types": "2.1.35",
+    "node-telegram-bot-api": "0.66.0"
+  }
+}
