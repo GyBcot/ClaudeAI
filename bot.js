@@ -163,20 +163,31 @@ async function sendCompletion(session, convId, prompt, parentUuid = null, fileUu
 
 const renderer = new marked.Renderer();
 
+renderer.space = () => '\n';
 renderer.heading = ({ text }) => `<b>${text}</b>\n`;
+renderer.paragraph = ({ text }) => `${text}\n\n`;
 renderer.strong = ({ text }) => `<b>${text}</b>`;
 renderer.em = ({ text }) => `<i>${text}</i>`;
+renderer.del = ({ text }) => `<s>${text}</s>`;
 renderer.codespan = ({ text }) => `<code>${text}</code>`;
 renderer.code = ({ text }) => `<pre><code>${text}</code></pre>\n`;
-renderer.paragraph = ({ text }) => `${text}\n\n`;
 renderer.link = ({ href, text }) => `<a href="${href}">${text}</a>`;
-renderer.list = (token) => {
-  const items = token.items.map(item => `• ${item.text}`).join('\n');
-  return `${items}\n`;
-};
-
-renderer.listitem = ({ text }) => text;
+renderer.image = ({ text }) => text;
 renderer.blockquote = ({ text }) => `<i>${text}</i>\n`;
+renderer.list = (token) => token.items.map(item => `• ${item.text}`).join('\n') + '\n';
+renderer.listitem = ({ text }) => text;
+renderer.checkbox = () => '';
+renderer.table = (token) => {
+  const header = token.header.map(h => h.text).join(' | ');
+  const rows = token.rows.map(row => row.map(cell => cell.text).join(' | ')).join('\n');
+  return `<pre><code>${header}\n${rows}</code></pre>\n`;
+};
+renderer.tablerow = ({ text }) => text;
+renderer.tablecell = ({ text }) => text;
+renderer.html = () => '';
+renderer.br = () => '\n';
+renderer.text = ({ text }) => text;
+renderer.hr = () => '\n';
 
 marked.setOptions({ renderer });
 
