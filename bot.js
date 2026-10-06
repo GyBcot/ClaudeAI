@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const chalk = require('chalk');
 const axios = require('axios');
 const mime = require('mime-types');
 const FormData = require('form-data');
@@ -195,7 +196,6 @@ async function sendLongMessage(bot, chatId, text, replyToId = null) {
       caption: '📄 Respons terlalu panjang, dikirim sebagai file.',
       ...(replyToId ? { reply_to_message_id: replyToId } : {}),
     },
-    
     {
       filename: fileName,
       contentType: 'text/plain',
@@ -298,11 +298,13 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
   const prompt = msg.text || msg.caption || '';
   if (!prompt && !fileBuffer) return;
 
+  let typingInterval = null;
+
   try {
     let currentAction = 'typing';
     await bot.sendChatAction(chatId, currentAction);
 
-    const typingInterval = setInterval(() => {
+    typingInterval = setInterval(() => {
       bot.sendChatAction(chatId, currentAction).catch(() => {});
     }, 4000);
 
@@ -311,6 +313,7 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
     if (fileBuffer) {
       currentAction = 'upload_document';
       await bot.sendChatAction(chatId, currentAction);
+      console.log(chalk.cyan(`[UPLOAD] ${fileName} (${mimeType}) — ${fileBuffer.length} bytes`));
       const uploaded = await uploadFile(session, session.convId, fileBuffer, fileName, mimeType);
       fileUuids.push(uploaded.uuid);
       currentAction = 'typing';
@@ -319,18 +322,18 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
 
     const result = await sendCompletion(session, session.convId, prompt, session.parentUuid, fileUuids);
 
-    clearInterval(typingInterval);
-
     if (!result?.text) return;
 
     session.parentUuid = result.assistantUuid;
 
     const formatted = formatResponse(result.text);
-    await bot.sendChatAction(chatId, 'upload_document');
     await sendLongMessage(bot, chatId, formatted, msg.message_id);
+
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error(chalk.red('Error:'), err.message);
     await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
+  } finally {
+    clearInterval(typingInterval);
   }
 }
 
@@ -363,13 +366,13 @@ bot.on('message', async (msg) => {
 
     return handleMessage(msg, fileBuffer, fileName, mimeType);
   } catch (err) {
-    console.error('Error download file:', err.message);
+    console.error(chalk.red('Error download file:'), err.message);
     await bot.sendMessage(msg.chat.id, `❌ Gagal mengunduh file: ${err.message}`);
   }
 });
 
-console.log('ClaudeAI started...');
+console.log(chalk.green.bold('ClaudeAI started...'));
 
 bot.on('polling_error', (err) => {
-  console.error('Polling error:', err.message);
+  console.error(chalk.red('Polling error:'), err.message);
 });
