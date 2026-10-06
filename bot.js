@@ -188,8 +188,6 @@ async function sendLongMessage(bot, chatId, text, replyToId = null) {
   const fileName = `response_${Date.now()}.txt`;
   const fileBuffer = Buffer.from(text, 'utf8');
 
-  await bot.sendChatAction(chatId, 'upload_document');
-
   await bot.sendDocument(
     chatId,
     fileBuffer,
@@ -197,6 +195,7 @@ async function sendLongMessage(bot, chatId, text, replyToId = null) {
       caption: '📄 Respons terlalu panjang, dikirim sebagai file.',
       ...(replyToId ? { reply_to_message_id: replyToId } : {}),
     },
+    
     {
       filename: fileName,
       contentType: 'text/plain',
@@ -327,6 +326,7 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
     session.parentUuid = result.assistantUuid;
 
     const formatted = formatResponse(result.text);
+    await bot.sendChatAction(chatId, 'upload_document');
     await sendLongMessage(bot, chatId, formatted, msg.message_id);
   } catch (err) {
     console.error('Error:', err.message);
