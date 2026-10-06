@@ -160,6 +160,10 @@ async function sendCompletion(session, convId, prompt, parentUuid = null, fileUu
   });
 }
 
+function hasCodeBlock(text) {
+  return /```/.test(text);
+}
+
 function formatResponse(text) {
   return text
     .replace(/&/g, '&amp;')
@@ -169,7 +173,7 @@ function formatResponse(text) {
     .replace(/^## (.+)$/gm, '<b>$1</b>')
     .replace(/^# (.+)$/gm, '<b>$1</b>')
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/`{3}(\w*)\n([\s\S]*?)`{3}/g, (_, lang, code) => `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`)
+    .replace(/`{3}[\w]*\n([\s\S]*?)`{3}/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/^[-*] (.+)$/gm, '• $1');
 }
@@ -200,9 +204,20 @@ function splitHtmlSafe(text, maxLen = 4096) {
   return chunks;
 }
 
-async function sendLongMessage(bot, chatId, text, replyToId = null) {
-  const chunks = splitHtmlSafe(text);
+async function sendLongMessage(bot, chatId, text, rawText, replyToId = null) {
+  if (hasCodeBlock(rawText)) {
+    const docOpts = {};
+    if (replyToId) docOpts.reply_to_message_id = replyToId;
+    await bot.sendDocument(
+      chatId,
+      Buffer.from(rawText, 'utf-8'),
+      docOpts,
+      { filename: `response_${Date.now()}.txt`, contentType: 'text/plain' }
+    );
+    return;
+  }
 
+  const chunks = splitHtmlSafe(text);
   for (let i = 0; i < chunks.length; i++) {
     const opts = { parse_mode: 'HTML' };
     if (i === 0 && replyToId) opts.reply_to_message_id = replyToId;
@@ -328,7 +343,7 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
     session.parentUuid = result.assistantUuid;
 
     const formatted = formatResponse(result.text);
-    await sendLongMessage(bot, chatId, formatted, msg.message_id);
+    await sendLongMessage(bot, chatId, formatted, result.text, msg.message_id);
   } catch (err) {
     console.error('Error:', err.message);
     await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
