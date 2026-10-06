@@ -188,6 +188,8 @@ async function sendLongMessage(bot, chatId, text, replyToId = null) {
   const fileName = `response_${Date.now()}.txt`;
   const fileBuffer = Buffer.from(text, 'utf8');
 
+  await bot.sendChatAction(chatId, 'upload_document');
+
   await bot.sendDocument(
     chatId,
     fileBuffer,
@@ -298,17 +300,22 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
   if (!prompt && !fileBuffer) return;
 
   try {
-    await bot.sendChatAction(chatId, 'typing');
+    let currentAction = 'typing';
+    await bot.sendChatAction(chatId, currentAction);
 
     const typingInterval = setInterval(() => {
-      bot.sendChatAction(chatId, 'typing').catch(() => {});
+      bot.sendChatAction(chatId, currentAction).catch(() => {});
     }, 4000);
 
     let fileUuids = [];
 
     if (fileBuffer) {
+      currentAction = 'upload_document';
+      await bot.sendChatAction(chatId, currentAction);
       const uploaded = await uploadFile(session, session.convId, fileBuffer, fileName, mimeType);
       fileUuids.push(uploaded.uuid);
+      currentAction = 'typing';
+      await bot.sendChatAction(chatId, currentAction);
     }
 
     const result = await sendCompletion(session, session.convId, prompt, session.parentUuid, fileUuids);
