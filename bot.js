@@ -160,69 +160,46 @@ async function sendCompletion(session, convId, prompt, parentUuid = null, fileUu
   });
 }
 
-function hasCodeBlock(text) {
-  return /```/.test(text);
+function escapeMarkdown(text) {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
 }
 
 function formatResponse(text) {
   return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<b>$1</b>')
-    .replace(/^## (.+)$/gm, '<b>$1</b>')
-    .replace(/^# (.+)$/gm, '<b>$1</b>')
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/`{3}[\w]*\n([\s\S]*?)`{3}/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^[-*] (.+)$/gm, '• $1');
+    .replace(/^### (.+)$/gm, '*$1*')
+    .replace(/^## (.+)$/gm, '*$1*')
+    .replace(/^# (.+)$/gm, '*$1*')
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')
+    .replace(/`{3}(\w*)\n([\s\S]*?)`{3}/g, (_, lang, code) => `\`\`\`\n${code.trim()}\n\`\`\``)
+    .replace(/^[-*] (.+)$/gm, '• $1')
+    .replace(/^\d+\. (.+)$/gm, (m) => m);
 }
 
-function splitHtmlSafe(text, maxLen = 4096) {
-  if (text.length <= maxLen) return [text];
+async function sendLongMessage(bot, chatId, text, replyToId = null) {
+  const MAX_LENGTH = 4096;
+  const opts = { parse_mode: 'Markdown' };
+  if (replyToId) opts.reply_to_message_id = replyToId;
 
-  const chunks = [];
-  let remaining = text;
-
-  while (remaining.length > maxLen) {
-    const window = remaining.slice(0, maxLen);
-
-    let cutAt = window.lastIndexOf('\n\n');
-    if (cutAt === -1 || cutAt < maxLen / 2) {
-      const fallback = window.lastIndexOf('\n');
-      if (fallback > maxLen / 2) cutAt = fallback;
-    }
-    if (cutAt === -1 || cutAt < maxLen / 2) {
-      cutAt = maxLen;
-    }
-
-    chunks.push(remaining.slice(0, cutAt));
-    remaining = remaining.slice(cutAt).trimStart();
-  }
-
-  if (remaining.length > 0) chunks.push(remaining);
-  return chunks;
-}
-
-async function sendLongMessage(bot, chatId, text, rawText, replyToId = null) {
-  if (hasCodeBlock(rawText)) {
-    const docOpts = {};
-    if (replyToId) docOpts.reply_to_message_id = replyToId;
-    await bot.sendDocument(
-      chatId,
-      Buffer.from(rawText, 'utf-8'),
-      docOpts,
-      { filename: `response_${Date.now()}.txt`, contentType: 'text/plain' }
-    );
+  if (text.length <= MAX_LENGTH) {
+    await bot.sendMessage(chatId, text, opts);
     return;
   }
 
-  const chunks = splitHtmlSafe(text);
-  for (let i = 0; i < chunks.length; i++) {
-    const opts = { parse_mode: 'HTML' };
-    if (i === 0 && replyToId) opts.reply_to_message_id = replyToId;
-    await bot.sendMessage(chatId, chunks[i], opts);
-  }
+  const fileName = `response_${Date.now()}.txt`;
+  const fileBuffer = Buffer.from(text, 'utf8');
+
+  await bot.sendDocument(
+    chatId,
+    fileBuffer,
+    {
+      caption: '📄 Respons terlalu panjang, dikirim sebagai file.',
+      ...(replyToId ? { reply_to_message_id: replyToId } : {}),
+    },
+    {
+      filename: fileName,
+      contentType: 'text/plain',
+    }
+  );
 }
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
@@ -256,8 +233,8 @@ bot.onText(/\/start/, (msg) => {
   if (!session) return;
   bot.sendMessage(
     msg.chat.id,
-    `Halo <b>${msg.from.first_name}</b>! 👋\n\nBot Claude AI siap digunakan.\nModel aktif: <b>${session.modelLabel}</b>\n\nKirim pesan atau file untuk mulai chat. Gunakan /model untuk ganti model.`,
-    { parse_mode: 'HTML' }
+    `Halo *${escapeMarkdown(msg.from.first_name)}*\\! 👋\n\nBot Claude AI siap digunakan\\.\nModel aktif: *${escapeMarkdown(session.modelLabel)}*\n\nKirim pesan atau file untuk mulai chat\\. Gunakan /model untuk ganti model\\.`,
+    { parse_mode: 'MarkdownV2' }
   );
 });
 
@@ -267,7 +244,7 @@ bot.onText(/\/reset/, (msg) => {
     userSessions[userId].convId = randomUUID();
     userSessions[userId].parentUuid = null;
   }
-  bot.sendMessage(msg.chat.id, '🔄 Percakapan direset. Mulai chat baru!');
+  bot.sendMessage(msg.chat.id, '🔄 Percakapan direset\\. Mulai chat baru\\!', { parse_mode: 'MarkdownV2' });
 });
 
 bot.onText(/\/model/, (msg) => {
@@ -300,11 +277,11 @@ bot.on('callback_query', async (query) => {
 
     await bot.answerCallbackQuery(query.id, { text: `Model diganti ke ${chosen.label}` });
     await bot.editMessageText(
-      `✅ Model aktif: <b>${chosen.label}</b>\n🔄 Percakapan direset otomatis.`,
+      `✅ Model aktif: *${escapeMarkdown(chosen.label)}*\n🔄 Percakapan direset otomatis\\.`,
       {
         chat_id: query.message.chat.id,
         message_id: query.message.message_id,
-        parse_mode: 'HTML',
+        parse_mode: 'MarkdownV2',
       }
     );
   }
@@ -343,7 +320,7 @@ async function handleMessage(msg, fileBuffer = null, fileName = null, mimeType =
     session.parentUuid = result.assistantUuid;
 
     const formatted = formatResponse(result.text);
-    await sendLongMessage(bot, chatId, formatted, result.text, msg.message_id);
+    await sendLongMessage(bot, chatId, formatted, msg.message_id);
   } catch (err) {
     console.error('Error:', err.message);
     await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
